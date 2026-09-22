@@ -272,29 +272,32 @@ function App() {
 
   return (
     <>
-      <main className="flex min-h-screen w-full items-center justify-center bg-slate-50 px-5 py-8 text-slate-900 transition-colors dark:bg-[#0A142F] dark:text-white">
-        <button
-          type="button"
-          onClick={() => setIsDarkMode((current) => !current)}
-          aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}
-          className="fixed right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-[#CCD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#1A3E95] shadow-sm transition hover:border-[#1A3E95] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-600 dark:bg-[#111f42] dark:text-white dark:hover:border-white"
-        >
-          {isDarkMode ? (
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.7 6.7 0 0 0 21 12.8Z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1M16.5 12a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-            </svg>
-          )}
-          {isDarkMode ? 'Modo Claro' : 'Modo Escuro'}
-        </button>
+      <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
+        <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
+          <div className="mb-6 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setIsDarkMode((current) => !current)}
+              aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}
+              className="inline-flex items-center gap-2 rounded-full border border-[#CCD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#1A3E95] shadow-sm transition hover:border-[#1A3E95] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-600 dark:bg-[#111f42] dark:text-white dark:hover:border-white"
+            >
+              {isDarkMode ? (
+                <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.7 6.7 0 0 0 21 12.8Z" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1M16.5 12a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+                </svg>
+              )}
+              {isDarkMode ? 'Modo Claro' : 'Modo Escuro'}
+            </button>
+          </div>
 
-        <div className={`flex min-h-screen w-full flex-col ${modoFoco ? 'max-w-none' : 'max-w-md'}`}>
-          {telaAtual === 'login' ? (
-            <>
-              <section className="flex flex-1 flex-col justify-center py-12">
+          <div className="flex flex-1 flex-col">
+            {telaAtual === 'login' ? (
+              <>
+                <section className="flex flex-1 flex-col justify-center py-12">
                 <div className="mb-10 flex flex-col items-center text-center">
                   <img src="/logo.png" alt="Calazans" className="mx-auto mb-8 block h-20 w-auto object-contain" />
                 </div>
@@ -362,9 +365,11 @@ function App() {
             </>
           ) : telaAtual === 'academias' ? (
             <section className="flex flex-1 flex-col justify-center py-12">
-              <button type="button" onClick={() => setTelaAtual('login')} className="fixed left-4 top-4 z-10 text-sm font-semibold text-[#1A3E95] transition hover:text-[#15357E] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] focus:ring-offset-2 dark:text-blue-300 dark:hover:text-white">
-                ← Voltar
-              </button>
+              <div className="mb-4">
+                <button type="button" onClick={() => setTelaAtual('login')} className="text-sm font-semibold text-[#1A3E95] transition hover:text-[#15357E] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] focus:ring-offset-2 dark:text-blue-300 dark:hover:text-white">
+                  ← Voltar
+                </button>
+              </div>
 
               <header className="mb-8 text-center">
                 <img src="/logo.png" alt="Calazans" className="mx-auto mb-6 block h-12 w-auto object-contain" />
@@ -417,15 +422,16 @@ function App() {
           )}
         </div>
       </main>
-      {videoAtivo && <VideoModal videoUrl={videoAtivo} onClose={() => setVideoAtivo(null)} />}
-    </>
-  )
+    </div>
+    {videoAtivo && <VideoModal videoUrl={videoAtivo} onClose={() => setVideoAtivo(null)} />}
+  </>
+)
 }
 
 function TelaTreinoFoco({ aparelhoEmFoco, fotoEmFoco, isDarkMode, descansoSegundos, descansoAtivo, seriesConcluidas, onSair, onAlternarTema, onAjustarDescanso, onAlternarDescanso, onZerarDescanso, onSeriesChange, onConcluir, formatarTempo, onVerVideo }) {
   return (
-    <main className="min-h-screen w-full bg-white px-5 py-8 text-slate-900 dark:bg-slate-950 dark:text-white">
-      <section className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
+    <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
+      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
         <header className="flex items-center justify-between">
           <button type="button" onClick={onSair} className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-[#1A3E95] transition hover:bg-[#1A3E95]/10 focus:outline-none focus:ring-2 focus:ring-[#1A3E95] dark:text-blue-300 dark:hover:bg-white/10">
             <span aria-hidden="true">&lt;</span> Sair do Treino
@@ -477,15 +483,15 @@ function TelaTreinoFoco({ aparelhoEmFoco, fotoEmFoco, isDarkMode, descansoSegund
           </label>
         </section>
         <button type="button" onClick={onConcluir} className="mt-6 w-full rounded-xl bg-[#1A3E95] px-4 py-3 text-sm font-bold text-white">Concluir Exercício</button>
-      </section>
     </main>
+    </div>
   )
 }
 
 function TelaTreinoAtual({ aparelhosSelecionados, aparelhosConcluidos, onSelecionar, onEncerrar, isDarkMode, onAlternarTema }) {
   return (
-    <main className="min-h-screen w-full bg-white px-5 py-8 text-slate-900 dark:bg-slate-950 dark:text-white">
-      <section className="mx-auto flex min-h-screen w-full max-w-2xl flex-col">
+    <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
+      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
         <header className="flex items-center justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Modo Foco</p>
@@ -504,18 +510,20 @@ function TelaTreinoAtual({ aparelhosSelecionados, aparelhosConcluidos, onSelecio
           })}
         </div>
         <button type="button" onClick={onEncerrar} className="mt-auto rounded-xl border border-red-200 px-4 py-3 text-sm font-bold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30">Encerrar Treino</button>
-      </section>
     </main>
+    </div>
   )
 }
 
 function TelaCatalogo({ academiaSelecionada, aparelhos, aparelhosSelecionados, fotosAparelhos, avisoSelecao, novoAparelhoAberto, nomeNovoAparelho, fotoNovoAparelho, videoNovoAparelho, onVoltar, onAlternarAparelho, onCapturarFoto, onStart, onAbrirNovo, onFecharNovo, onSalvarNovo, onNomeChange, onFotoNovo, onVideoChange, onVerVideo, onEditarVideo, onLimparCache }) {
   return (
     <section className="flex flex-1 flex-col py-10 pb-28">
-      <button type="button" onClick={onAbrirNovo} className="fixed right-4 top-16 z-10 rounded-full bg-[#1A3E95] px-4 py-2.5 text-xs font-bold text-white">+ Novo Aparelho</button>
-      <header className="mb-7 flex items-start gap-3">
-        <button type="button" onClick={onVoltar} aria-label="Voltar para academias" className="mt-1 rounded-lg p-2 text-[#1A3E95]">&lt;</button>
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95]">Catálogo de aparelhos</p><h1 className="mt-1 text-2xl font-bold">Treino na {academiaSelecionada}</h1><p className="mt-2 text-sm text-slate-500 dark:text-slate-300">Escolha os exercícios para o seu treino de hoje.</p></div>
+      <div className="flex items-center justify-between gap-4 mb-7">
+        <button type="button" onClick={onVoltar} aria-label="Voltar para academias" className="rounded-lg bg-white p-2 text-[#1A3E95] shadow-sm dark:bg-slate-800">&lt;</button>
+        <button type="button" onClick={onAbrirNovo} className="rounded-full bg-[#1A3E95] px-4 py-2.5 text-xs font-bold text-white shadow-md">+ Novo Aparelho</button>
+      </div>
+      <header className="mb-7">
+        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Catálogo de aparelhos</p><h1 className="mt-1 text-2xl font-bold dark:text-white">Treino na {academiaSelecionada}</h1><p className="mt-2 text-sm text-slate-500 dark:text-slate-300">Escolha os exercícios para o seu treino de hoje.</p></div>
       </header>
       <div className="space-y-3">
         {aparelhos.map((aparelho) => {
@@ -550,8 +558,8 @@ function TelaCatalogo({ academiaSelecionada, aparelhos, aparelhosSelecionados, f
           Limpar Cache de Vídeos
         </button>
       </div>
-      <button type="button" onClick={onStart} className="fixed bottom-0 left-1/2 z-10 w-full max-w-md -translate-x-1/2 bg-[#1A3E95] px-5 py-4 text-sm font-bold text-white">Start (Modo Foco){aparelhosSelecionados.length ? ` · ${aparelhosSelecionados.length} selecionado${aparelhosSelecionados.length > 1 ? 's' : ''}` : ''}</button>
-      {novoAparelhoAberto && <div className="fixed inset-0 z-20 flex items-center justify-center bg-[#0A142F]/60 px-5"><form onSubmit={onSalvarNovo} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#111f42]"><h2 className="text-lg font-bold">Novo Aparelho</h2><label className="mt-4 block text-sm font-semibold">Nome do Aparelho<input required value={nomeNovoAparelho} onChange={(event) => onNomeChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><label className="mt-4 inline-flex cursor-pointer rounded-xl border border-[#1A3E95] px-4 py-2.5 text-sm font-bold text-[#1A3E95]">{fotoNovoAparelho ? 'Trocar Foto' : 'Tirar Foto'}<input type="file" accept="image/*" capture="environment" onChange={onFotoNovo} className="sr-only" /></label><label className="mt-4 block text-sm font-semibold">Link do vídeo (opcional)<input type="url" value={videoNovoAparelho} onChange={(event) => onVideoChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><div className="mt-6 flex gap-3"><button type="button" onClick={onFecharNovo} className="flex-1 rounded-xl border p-3 font-bold">Cancelar</button><button type="submit" className="flex-1 rounded-xl bg-[#1A3E95] p-3 font-bold text-white">Salvar Aparelho</button></div></form></div>}
+      <button type="button" onClick={onStart} className="fixed bottom-0 left-1/2 z-10 w-full max-w-lg -translate-x-1/2 bg-[#1A3E95] px-5 py-4 text-sm font-bold text-white">Start (Modo Foco){aparelhosSelecionados.length ? ` · ${aparelhosSelecionados.length} selecionado${aparelhosSelecionados.length > 1 ? 's' : ''}` : ''}</button>
+      {novoAparelhoAberto && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A142F]/60 px-5 backdrop-blur-sm"><form onSubmit={onSalvarNovo} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#111f42]"><h2 className="text-lg font-bold">Novo Aparelho</h2><label className="mt-4 block text-sm font-semibold">Nome do Aparelho<input required value={nomeNovoAparelho} onChange={(event) => onNomeChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><label className="mt-4 inline-flex cursor-pointer rounded-xl border border-[#1A3E95] px-4 py-2.5 text-sm font-bold text-[#1A3E95]">{fotoNovoAparelho ? 'Trocar Foto' : 'Tirar Foto'}<input type="file" accept="image/*" capture="environment" onChange={onFotoNovo} className="sr-only" /></label><label className="mt-4 block text-sm font-semibold">Link do vídeo (opcional)<input type="url" value={videoNovoAparelho} onChange={(event) => onVideoChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><div className="mt-6 flex gap-3"><button type="button" onClick={onFecharNovo} className="flex-1 rounded-xl border p-3 font-bold">Cancelar</button><button type="submit" className="flex-1 rounded-xl bg-[#1A3E95] p-3 font-bold text-white">Salvar Aparelho</button></div></form></div>}
     </section>
   )
 }
