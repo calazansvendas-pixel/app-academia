@@ -1,43 +1,33 @@
 import { useEffect, useState } from 'react'
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { db } from './firebase'
 
 const perfilAdmin = { id: 'calazans', name: 'Calazans', role: 'admin' }
 const dadosVazios = { selecionados: [], series: {}, concluidos: {}, videos: {}, historico: [] }
 
-function lerDados(chave, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(chave)) ?? fallback
-  } catch {
-    return fallback
-  }
-}
-
-function excluirAparelhoDosDados(currentUser, aparelhoId, machines, dadosPerfis, fotos) {
-  if (currentUser?.role !== 'admin') return null
-  const aparelho = machines.find((item) => item.id === aparelhoId)
-  if (!aparelho) return null
-
-  const semChave = (mapa, chave) => Object.fromEntries(Object.entries(mapa).filter(([id]) => id !== chave))
+function limparTreino(dados, machines) {
+  const nomes = new Set(machines.map((aparelho) => aparelho.name))
+  const ids = new Set(machines.map((aparelho) => aparelho.id))
+  const filtrarMapa = (mapa, chaves) => Object.fromEntries(Object.entries(mapa || {}).filter(([chave]) => chaves.has(chave)))
   return {
-    machines: machines.filter((item) => item.id !== aparelhoId),
-    fotos: semChave(fotos, aparelhoId),
-    dadosPerfis: Object.fromEntries(Object.entries(dadosPerfis).map(([perfilId, dados]) => {
-      const atuais = { ...dadosVazios, ...dados }
-      return [perfilId, {
-        ...atuais,
-        selecionados: atuais.selecionados.filter((nome) => nome !== aparelho.name),
-        series: semChave(atuais.series, aparelho.name),
-        concluidos: semChave(atuais.concluidos, aparelho.name),
-        videos: semChave(atuais.videos, aparelhoId),
-      }]
-    })),
+    selecionados: (dados.selecionados || []).filter((nome) => nomes.has(nome)),
+    series: filtrarMapa(dados.series, nomes),
+    concluidos: filtrarMapa(dados.concluidos, nomes),
+    videos: filtrarMapa(dados.videos, ids),
   }
 }
 
 function App() {
   const [telaAtual, setTelaAtual] = useState('perfis')
-  const [perfis, setPerfis] = useState(() => [perfilAdmin, ...lerDados('perfis', []).filter((perfil) => perfil.id !== perfilAdmin.id).map((perfil) => ({ ...perfil, role: 'user' }))])
+  const [perfis, setPerfis] = useState([])
   const [perfilAtivo, setPerfilAtivo] = useState(null)
-  const currentUser = perfilAtivo
+  const currentUser = perfis.find((perfil) => perfil.id === perfilAtivo?.id) || null
+  const [loadingPerfis, setLoadingPerfis] = useState(true)
+  const [loadingMachines, setLoadingMachines] = useState(true)
+  const [machinesProntas, setMachinesProntas] = useState(false)
+  const [loadingDados, setLoadingDados] = useState(true)
+  const [salvando, setSalvando] = useState(false)
+  const [erroPersistencia, setErroPersistencia] = useState('')
   const [filtroHistorico, setFiltroHistorico] = useState('todos')
   const [modoFoco, setModoFoco] = useState(false)
   const [academiaSelecionada, setAcademiaSelecionada] = useState('')
@@ -91,61 +81,105 @@ function App() {
   }
 
   const academias = ['Órbita', 'Vix', 'Panobianco']
-  const aparelhosPadrao = [
-    { id: 'supino-reto', name: 'Supino Reto', image: '/aparelhos/supino-reto.jpg', videoUrl: 'https://www.youtube.com/embed/EZMYCLKuGow' },
-    { id: 'supino-inclinado', name: 'Supino Inclinado', image: '/aparelhos/supino-inclinado.jpg', videoUrl: 'https://www.youtube.com/embed/6jBx5YwAb7E' },
-    { id: 'puxador-frente', name: 'Puxador Frente', image: '/aparelhos/puxador-frente.jpg', videoUrl: 'https://www.youtube.com/embed/ftcql3-AMRs' },
-    { id: 'puxador-triangulo', name: 'Puxador Triângulo', image: '/aparelhos/puxador-triangulo.jpg', videoUrl: 'https://www.youtube.com/embed/4-PsgYmkDsM' },
-    { id: 'maquina-biceps', name: 'Máquina de Bíceps', image: '/aparelhos/maquina-biceps.jpg', videoUrl: 'https://www.youtube.com/embed/U-f3m_H6Fz4' },
-    { id: 'maquina-triceps', name: 'Máquina de Tríceps', image: '/aparelhos/maquina-triceps.jpg', videoUrl: 'https://www.youtube.com/embed/m5xXw_fD-pE' },
-    { id: 'peck-deck', name: 'Peck Deck', image: '/aparelhos/peck-deck.jpg', videoUrl: 'https://www.youtube.com/embed/466JpXmS2xY' },
-    { id: 'polia-peito', name: 'Polia - Peito', image: '/aparelhos/polia-peito.jpg', videoUrl: 'https://www.youtube.com/embed/WEM9fH_Yv68' },
-    { id: 'polia-triceps', name: 'Polia - Tríceps', image: '/aparelhos/polia-triceps.jpg', videoUrl: 'https://www.youtube.com/embed/V_L8_yXqW-Y' },
-    { id: 'polia-biceps', name: 'Polia - Bíceps', image: '/aparelhos/polia-biceps.jpg', videoUrl: 'https://www.youtube.com/embed/5H7T6XFfO5w' },
-    { id: 'crossover', name: 'Crossover', image: '/aparelhos/crossover.jpg', videoUrl: 'https://www.youtube.com/embed/p7-H-3y_oMk' },
-    { id: 'polia-manguito-rotador', name: 'Polia - Manguito Rotador', image: '/aparelhos/polia-manguito-rotador.jpg', videoUrl: 'https://www.youtube.com/embed/5uWpYnE0B7c' },
-  ]
-  const [aparelhos, setAparelhos] = useState(() => {
-    try {
-      const aparelhosSalvos = JSON.parse(localStorage.getItem('aparelhos') || 'null')
-      return Array.isArray(aparelhosSalvos) ? aparelhosSalvos : aparelhosPadrao
-    } catch {
-      return aparelhosPadrao
-    }
-  })
-
-  const [dadosPerfis, setDadosPerfis] = useState(() => lerDados('dados-perfis', {
-    [perfilAdmin.id]: {
-      ...dadosVazios,
-      videos: Object.fromEntries(aparelhos.map((aparelho) => [aparelho.id, aparelho.videoUrl || aparelho.video || ''])),
-    },
-  }))
-  const dadosAtivos = { ...dadosVazios, ...dadosPerfis[perfilAtivo?.id] }
-  const aparelhosSelecionados = dadosAtivos.selecionados
+  const [aparelhos, setAparelhos] = useState([])
+  const [dadosPerfis, setDadosPerfis] = useState({})
+  const [historicos, setHistoricos] = useState({})
+  const dadosAtivos = { ...dadosVazios, ...dadosPerfis[currentUser?.id] }
+  const aparelhosSelecionados = dadosAtivos.selecionados.filter((nome) => aparelhos.some((aparelho) => aparelho.name === nome))
   const seriesConcluidas = dadosAtivos.series
   const aparelhosConcluidos = dadosAtivos.concluidos
   const catalogoDoPerfil = aparelhos.map((aparelho) => ({ ...aparelho, video: '', videoUrl: dadosAtivos.videos[aparelho.id] || '' }))
 
   useEffect(() => {
-    localStorage.setItem('perfis', JSON.stringify(perfis))
-  }, [perfis])
+    let ativo = true
+    let perfisRecebidos = false
+    let machinesRecebidas = false
+    const avisoConexao = window.setTimeout(() => {
+      if (!perfisRecebidos || !machinesRecebidas) {
+        setErroPersistencia('A conexão com o Firestore está demorando. Verifique a rede, a criação do banco (default) e suas regras de acesso.')
+      }
+    }, 12000)
+    const adminRef = doc(db, 'users', perfilAdmin.id)
+    getDoc(adminRef).then((snapshot) => {
+      if (ativo && (!snapshot.exists() || snapshot.data().role !== 'admin')) {
+        return setDoc(adminRef, { name: perfilAdmin.name, role: 'admin' }, { merge: true })
+      }
+    }).catch(() => { if (ativo) setErroPersistencia('Não foi possível configurar o perfil administrador.') })
+    const pararPerfis = onSnapshot(collection(db, 'users'), (snapshot) => {
+      perfisRecebidos = true
+      setPerfis(snapshot.docs.map((item) => ({ ...item.data(), id: item.id })))
+      setLoadingPerfis(false)
+    }, () => { setLoadingPerfis(false); setErroPersistencia('Não foi possível carregar os perfis. Verifique a conexão e as permissões do Firestore.') })
+    const pararMachines = onSnapshot(collection(db, 'machines'), { includeMetadataChanges: true }, (snapshot) => {
+      machinesRecebidas = !snapshot.metadata.fromCache
+      const machines = snapshot.docs.map((item) => ({ ...item.data(), id: item.id }))
+      setAparelhos(machines)
+      setFotosAparelhos((current) => ({ ...current, ...Object.fromEntries(machines.filter((item) => item.photo).map((item) => [item.id, item.photo])) }))
+      setLoadingMachines(false)
+      setMachinesProntas(!snapshot.metadata.fromCache)
+    }, () => { setLoadingMachines(false); setMachinesProntas(false); setErroPersistencia('Não foi possível carregar o catálogo do Firestore.') })
+    return () => { ativo = false; window.clearTimeout(avisoConexao); pararPerfis(); pararMachines() }
+  }, [])
+
+  const userId = currentUser?.id
+  const userRole = currentUser?.role
+  useEffect(() => {
+    if (!userId) return undefined
+    return onSnapshot(doc(db, 'users', userId, 'workout', 'current'), (snapshot) => {
+      setDadosPerfis({ [userId]: { ...dadosVazios, ...(snapshot.exists() ? snapshot.data() : {}) } })
+      setLoadingDados(false)
+    }, () => { setLoadingDados(false); setErroPersistencia('Não foi possível carregar os dados deste perfil.') })
+  }, [userId])
+
+  const perfisHistorico = userRole === 'admin' && telaAtual === 'historico-geral' ? perfis : currentUser ? [currentUser] : []
+  const idsHistorico = perfisHistorico.map((perfil) => perfil.id).sort().join('|')
+  const loadingHistorico = perfisHistorico.some((perfil) => !Object.hasOwn(historicos, perfil.id))
+  useEffect(() => {
+    if (!userId || (telaAtual !== 'historico' && telaAtual !== 'historico-geral')) return undefined
+    const ids = userRole === 'admin' && telaAtual === 'historico-geral' ? idsHistorico.split('|').filter(Boolean) : [userId]
+    const parar = ids.map((id) => onSnapshot(collection(db, 'users', id, 'history'), (snapshot) => {
+      setHistoricos((current) => ({ ...current, [id]: snapshot.docs.map((item) => ({ ...item.data(), id: item.id })) }))
+    }, () => {
+      setHistoricos((current) => ({ ...current, [id]: [] }))
+      setErroPersistencia('Não foi possível carregar o histórico solicitado.')
+    }))
+    return () => parar.forEach((unsubscribe) => unsubscribe())
+  }, [userId, userRole, telaAtual, idsHistorico])
 
   useEffect(() => {
-    localStorage.setItem('dados-perfis', JSON.stringify(dadosPerfis))
-  }, [dadosPerfis])
+    if (!userId || loadingDados || !machinesProntas) return
+    const dados = dadosPerfis[userId]
+    if (!dados) return
+    const limpos = limparTreino(dados, aparelhos)
+    const anteriores = { selecionados: dados.selecionados, series: dados.series, concluidos: dados.concluidos, videos: dados.videos }
+    if (JSON.stringify(limpos) === JSON.stringify(anteriores)) return
+    setDoc(doc(db, 'users', userId, 'workout', 'current'), limpos, { mergeFields: ['selecionados', 'series', 'concluidos', 'videos'] })
+      .catch(() => setErroPersistencia('Não foi possível atualizar as referências do treino.'))
+  }, [userId, loadingDados, machinesProntas, dadosPerfis, aparelhos])
 
-  const atualizarDados = (campo, valor) => {
-    if (!perfilAtivo) return
-    setDadosPerfis((current) => {
-      const dados = { ...dadosVazios, ...current[perfilAtivo.id] }
-      return { ...current, [perfilAtivo.id]: { ...dados, [campo]: typeof valor === 'function' ? valor(dados[campo]) : valor } }
-    })
+  const atualizarDados = async (campo, valor) => {
+    if (!currentUser || loadingDados || !machinesProntas || !dadosPerfis[currentUser.id]) return false
+    const id = currentUser.id
+    const anteriores = dadosAtivos[campo]
+    const novoValor = typeof valor === 'function' ? valor(anteriores) : valor
+    setDadosPerfis((current) => ({ ...current, [id]: { ...dadosAtivos, [campo]: novoValor } }))
+    try {
+      await setDoc(doc(db, 'users', id, 'workout', 'current'), { [campo]: novoValor }, { mergeFields: [campo] })
+      return true
+    } catch {
+      setDadosPerfis((current) => ({ ...current, [id]: { ...current[id], [campo]: anteriores } }))
+      setErroPersistencia('Não foi possível salvar os dados do treino. Tente novamente.')
+      return false
+    }
   }
   const setAparelhosSelecionados = (valor) => atualizarDados('selecionados', valor)
   const setSeriesConcluidas = (valor) => atualizarDados('series', valor)
   const setAparelhosConcluidos = (valor) => atualizarDados('concluidos', valor)
 
   const escolherPerfil = (perfil) => {
+    setLoadingDados(true)
+    setDadosPerfis({})
+    setHistoricos({})
     setPerfilAtivo(perfil)
     setTelaAtual('academias')
     setAvisoSelecao('')
@@ -153,21 +187,32 @@ function App() {
   }
 
   const trocarPerfil = () => {
+    if (salvando) return
     setModoFoco(false)
     setDescansoAtivo(false)
     setDescansoSegundos(0)
     setVideoAtivo(null)
     fecharNovoAparelho()
     setPerfilAtivo(null)
+    setDadosPerfis({})
+    setHistoricos({})
     setTelaAtual('perfis')
   }
 
-  const cadastrarPerfil = (nome) => {
+  const cadastrarPerfil = async (nome) => {
+    if (salvando || loadingPerfis) return false
     if (perfis.some((perfil) => perfil.name.toLocaleLowerCase('pt-BR') === nome.toLocaleLowerCase('pt-BR'))) return false
-    const perfil = { id: crypto.randomUUID(), name: nome, role: 'user' }
-    setPerfis((current) => [...current, perfil])
-    escolherPerfil(perfil)
-    return true
+    try {
+      setSalvando(true)
+      const ref = await addDoc(collection(db, 'users'), { name: nome, role: 'user' })
+      escolherPerfil({ id: ref.id, name: nome, role: 'user' })
+      return true
+    } catch {
+      setErroPersistencia('Não foi possível cadastrar o perfil no Firestore.')
+      return false
+    } finally {
+      setSalvando(false)
+    }
   }
 
   const capturarFoto = (aparelho, event) => {
@@ -175,13 +220,15 @@ function App() {
     if (!arquivo) return
 
     const leitor = new FileReader()
-    leitor.onload = () => {
+    leitor.onload = async () => {
       const foto = leitor.result
-      setFotosAparelhos((current) => {
-        const novasFotos = { ...current, [aparelho.id]: foto }
-        localStorage.setItem('fotos-aparelhos', JSON.stringify(novasFotos))
-        return novasFotos
-      })
+      if (foto.length > 900000) { setErroPersistencia('A foto é grande demais para o Firestore. Escolha uma imagem menor.'); return }
+      try {
+        await updateDoc(doc(db, 'machines', aparelho.id), { photo: foto })
+        setFotosAparelhos((current) => ({ ...current, [aparelho.id]: foto }))
+      } catch {
+        setErroPersistencia('Não foi possível salvar a foto no Firestore.')
+      }
       event.target.value = ''
     }
     leitor.readAsDataURL(arquivo)
@@ -206,28 +253,23 @@ function App() {
     setVideoNovoAparelho('')
   }
 
-  const salvarNovoAparelho = (event) => {
+  const salvarNovoAparelho = async (event) => {
     event.preventDefault()
     const nome = nomeNovoAparelho.trim()
-    if (!nome) return
-
-    const id = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `aparelho-${Date.now()}`
-    const novoAparelho = { id, name: nome }
-    const novaLista = [...aparelhos, novoAparelho]
-
-    setAparelhos(novaLista)
-    localStorage.setItem('aparelhos', JSON.stringify(novaLista))
-    atualizarDados('videos', (current) => ({ ...current, [id]: formatarYoutubeUrl(videoNovoAparelho.trim()) }))
-    if (fotoNovoAparelho) {
-      setFotosAparelhos((current) => {
-        const novasFotos = { ...current, [id]: fotoNovoAparelho }
-        localStorage.setItem('fotos-aparelhos', JSON.stringify(novasFotos))
-        return novasFotos
-      })
+    if (!nome || !currentUser || salvando || loadingDados || !machinesProntas) return
+    if (fotoNovoAparelho.length > 900000) { setErroPersistencia('Escolha uma foto menor para salvar no Firestore.'); return }
+    try {
+      setSalvando(true)
+      const ref = await addDoc(collection(db, 'machines'), { name: nome, photo: fotoNovoAparelho })
+      if (videoNovoAparelho.trim()) {
+        await atualizarDados('videos', (current) => ({ ...current, [ref.id]: formatarYoutubeUrl(videoNovoAparelho.trim()) }))
+      }
+      fecharNovoAparelho()
+    } catch {
+      setErroPersistencia('Não foi possível cadastrar o aparelho no Firestore.')
+    } finally {
+      setSalvando(false)
     }
-    fecharNovoAparelho()
   }
 
   const editarVideo = (aparelhoId) => {
@@ -238,26 +280,29 @@ function App() {
     atualizarDados('videos', (current) => ({ ...current, [aparelhoId]: videoUrlFormatado }))
   }
 
-  const excluirAparelho = (aparelhoId) => {
-    if (currentUser?.role !== 'admin') return
+  const excluirAparelho = async (aparelhoId) => {
+    if (currentUser?.role !== 'admin' || salvando || !machinesProntas) return
     const aparelho = aparelhos.find((item) => item.id === aparelhoId)
     if (!aparelho) return
     if (!window.confirm('Deseja realmente excluir este aparelho do catálogo global?')) return
 
-    const novosDados = excluirAparelhoDosDados(currentUser, aparelhoId, aparelhos, dadosPerfis, fotosAparelhos)
-    if (!novosDados) return
-    localStorage.setItem('aparelhos', JSON.stringify(novosDados.machines))
-    localStorage.setItem('fotos-aparelhos', JSON.stringify(novosDados.fotos))
-    localStorage.setItem('dados-perfis', JSON.stringify(novosDados.dadosPerfis))
-    setAparelhos(novosDados.machines)
-    setFotosAparelhos(novosDados.fotos)
-    setDadosPerfis(novosDados.dadosPerfis)
-    setVideoAtivo(null)
-    if (aparelhoEmExecucao === aparelho.name) {
-      setAparelhoEmExecucao('')
-      setTelaFoco('atual')
-      setDescansoAtivo(false)
-      setDescansoSegundos(0)
+    try {
+      setSalvando(true)
+      const perfil = await getDoc(doc(db, 'users', currentUser.id))
+      if (currentUser?.role !== 'admin' || perfil.data()?.role !== 'admin') return
+      await deleteDoc(doc(db, 'machines', aparelhoId))
+      const restantes = aparelhos.filter((item) => item.id !== aparelhoId)
+      await Promise.all(perfis.map((usuario) => runTransaction(db, async (transaction) => {
+        const ref = doc(db, 'users', usuario.id, 'workout', 'current')
+        const snapshot = await transaction.get(ref)
+        if (snapshot.exists()) transaction.set(ref, limparTreino(snapshot.data(), restantes), { mergeFields: ['selecionados', 'series', 'concluidos', 'videos'] })
+      })))
+      setFotosAparelhos((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== aparelhoId)))
+      setVideoAtivo(null)
+    } catch {
+      setErroPersistencia('Não foi possível excluir o aparelho. Verifique suas permissões no Firestore.')
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -277,6 +322,7 @@ function App() {
   }
 
   const iniciarFoco = () => {
+    if (!machinesProntas || loadingDados || salvando) return
     if (aparelhosSelecionados.length === 0) {
       setAvisoSelecao('Selecione pelo menos 1 exercício para iniciar o Modo Foco.')
       return
@@ -328,24 +374,34 @@ function App() {
     setSeriesConcluidas((current) => ({ ...current, [aparelhoEmExecucao]: event.target.value }))
   }
 
-  const encerrarTreino = () => {
+  const encerrarTreino = async () => {
+    if (!currentUser || salvando || loadingDados || !machinesProntas || !dadosPerfis[currentUser.id]) return
     const exercicios = aparelhosSelecionados.map((nome) => {
       const aparelho = aparelhos.find((item) => item.name === nome)
       return { id: aparelho?.id, nome, series: Number(seriesConcluidas[nome] || 0), status: aparelhosConcluidos[nome] ? 'Concluído' : 'Não concluído' }
     })
-    atualizarDados('historico', (current) => [...current, {
-      id: crypto.randomUUID(),
-      data: new Date().toISOString(),
-      academia: academiaSelecionada,
-      status: exercicios.every((item) => item.status === 'Concluído') ? 'Concluído' : 'Parcial',
-      exercicios,
-    }])
+    try {
+      setSalvando(true)
+      const lote = writeBatch(db)
+      lote.set(doc(collection(db, 'users', currentUser.id, 'history')), {
+        userId: currentUser.id,
+        data: new Date().toISOString(),
+        academia: academiaSelecionada,
+        status: exercicios.every((item) => item.status === 'Concluído') ? 'Concluído' : 'Parcial',
+        exercicios,
+      })
+      lote.set(doc(db, 'users', currentUser.id, 'workout', 'current'), { series: {}, concluidos: {} }, { mergeFields: ['series', 'concluidos'] })
+      await lote.commit()
+    } catch {
+      setErroPersistencia('O histórico não foi salvo. O treino continua aberto para você tentar novamente.')
+      return
+    } finally {
+      setSalvando(false)
+    }
     setModoFoco(false)
     setTelaAtual('academias')
     setTelaFoco('atual')
     setAparelhoEmExecucao('')
-    setSeriesConcluidas({})
-    setAparelhosConcluidos({})
     setDescansoAtivo(false)
     setDescansoSegundos(0)
   }
@@ -364,31 +420,37 @@ function App() {
     setDescansoAtivo(false)
     setModoFoco(false)
     setVideoAtivo(null)
+    setHistoricos({})
     setTelaAtual(tela)
   }
-  const barraPerfil = perfilAtivo && <HeaderApp
-    perfil={perfilAtivo}
+  const barraPerfil = currentUser && <>
+    <HeaderApp
+    perfil={currentUser}
     onTrocar={trocarPerfil}
     isDarkMode={isDarkMode}
     onAlternarTema={() => setIsDarkMode((current) => !current)}
     onVoltar={voltar}
     telaAtual={modoFoco ? 'treino' : telaAtual}
     onHistorico={abrirHistorico}
-  />
+    />
+    {(loadingMachines || loadingDados || salvando) && <p role="status" className="mb-2 text-xs text-slate-500 dark:text-slate-300">{salvando ? 'Salvando…' : 'Carregando dados…'}</p>}
+    {erroPersistencia && <p role="alert" className="mb-3 text-xs text-red-600 dark:text-red-300">{erroPersistencia}</p>}
+  </>
 
-  if (!perfilAtivo) {
-    return <TelaPerfis perfis={perfis} onSelecionar={escolherPerfil} onCadastrar={cadastrarPerfil} />
+  if (!currentUser) {
+    return <TelaPerfis perfis={perfis} onSelecionar={escolherPerfil} onCadastrar={cadastrarPerfil} loading={loadingPerfis} salvando={salvando} erroPersistencia={erroPersistencia} />
   }
 
   if (modoFoco) {
     return (
       <>
-        {telaFoco === 'atual' ? <TelaTreinoAtual
+        {telaFoco === 'atual' || !aparelhoEmFoco ? <TelaTreinoAtual
           barraPerfil={barraPerfil}
           aparelhosSelecionados={aparelhosSelecionados}
           aparelhosConcluidos={aparelhosConcluidos}
           onSelecionar={abrirExecucao}
           onEncerrar={encerrarTreino}
+          salvando={salvando}
         /> : <TelaTreinoFoco
           barraPerfil={barraPerfil}
           aparelhoEmFoco={aparelhoEmFoco}
@@ -416,11 +478,12 @@ function App() {
           {barraPerfil}
 
           <div className="flex flex-1 flex-col">
-            {telaAtual === 'historico' || (telaAtual === 'historico-geral' && perfilAtivo.role === 'admin') ? (
+            {telaAtual === 'historico' || (telaAtual === 'historico-geral' && currentUser.role === 'admin') ? (
               <TelaHistorico
-                geral={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin'}
-                perfis={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin' ? perfis : [perfilAtivo]}
-                dadosPerfis={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin' ? dadosPerfis : { [perfilAtivo.id]: dadosAtivos }}
+                geral={telaAtual === 'historico-geral' && currentUser.role === 'admin'}
+                perfis={perfisHistorico}
+                dadosPerfis={Object.fromEntries(perfisHistorico.map((perfil) => [perfil.id, { historico: historicos[perfil.id] || [] }]))}
+                loading={loadingHistorico}
                 filtro={filtroHistorico}
                 onFiltro={setFiltroHistorico}
               />
@@ -520,6 +583,8 @@ function App() {
             </section>
           ) : (
             <TelaCatalogo
+              loading={loadingMachines || loadingDados || !machinesProntas}
+              salvando={salvando}
               currentUser={currentUser}
               onExcluirAparelho={excluirAparelho}
               academiaSelecionada={academiaSelecionada}
@@ -606,7 +671,7 @@ function TelaTreinoFoco({ barraPerfil, aparelhoEmFoco, fotoEmFoco, descansoSegun
   )
 }
 
-function TelaTreinoAtual({ barraPerfil, aparelhosSelecionados, aparelhosConcluidos, onSelecionar, onEncerrar }) {
+function TelaTreinoAtual({ barraPerfil, aparelhosSelecionados, aparelhosConcluidos, onSelecionar, onEncerrar, salvando }) {
   return (
     <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
       <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-4 text-slate-900 dark:text-white">
@@ -625,13 +690,13 @@ function TelaTreinoAtual({ barraPerfil, aparelhosSelecionados, aparelhosConcluid
             </button>
           })}
         </div>
-        <button type="button" onClick={onEncerrar} className="mt-auto rounded-xl border border-red-200 px-4 py-3 text-sm font-bold text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30">Encerrar Treino</button>
+        <button type="button" onClick={onEncerrar} disabled={salvando} className="mt-auto rounded-xl border border-red-200 px-4 py-3 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30">Encerrar Treino</button>
     </main>
     </div>
   )
 }
 
-function TelaCatalogo({ currentUser, onExcluirAparelho, academiaSelecionada, aparelhos, aparelhosSelecionados, fotosAparelhos, avisoSelecao, novoAparelhoAberto, nomeNovoAparelho, fotoNovoAparelho, videoNovoAparelho, onAlternarAparelho, onCapturarFoto, onStart, onAbrirNovo, onFecharNovo, onSalvarNovo, onNomeChange, onFotoNovo, onVideoChange, onVerVideo, onEditarVideo, onLimparCache }) {
+function TelaCatalogo({ loading, salvando, currentUser, onExcluirAparelho, academiaSelecionada, aparelhos, aparelhosSelecionados, fotosAparelhos, avisoSelecao, novoAparelhoAberto, nomeNovoAparelho, fotoNovoAparelho, videoNovoAparelho, onAlternarAparelho, onCapturarFoto, onStart, onAbrirNovo, onFecharNovo, onSalvarNovo, onNomeChange, onFotoNovo, onVideoChange, onVerVideo, onEditarVideo, onLimparCache }) {
   return (
     <section className="flex flex-1 flex-col pt-1 pb-28">
       <header className="mb-3">
@@ -641,12 +706,14 @@ function TelaCatalogo({ currentUser, onExcluirAparelho, academiaSelecionada, apa
         <button type="button" onClick={onAbrirNovo} className="rounded-full bg-[#1A3E95] px-4 py-2.5 text-xs font-bold text-white shadow-md">+ Novo Aparelho</button>
       </div>
       <div className="space-y-3">
+        {!loading && aparelhos.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-300">Nenhum aparelho cadastrado no catálogo global.</p>}
         {aparelhos.map((aparelho) => {
           const selecionado = aparelhosSelecionados.includes(aparelho.name)
           const videoUrl = aparelho.videoUrl || aparelho.video
           return <article key={aparelho.id} className={`relative flex items-center gap-3 rounded-xl border bg-white p-3 shadow-sm dark:bg-[#111f42] ${selecionado ? 'border-[#1A3E95] ring-2 ring-[#1A3E95]/20' : 'border-[#CCD5E1] dark:border-slate-600'}`}>
             {currentUser?.role === 'admin' && <button
               type="button"
+              disabled={salvando || loading}
               aria-label={`Excluir aparelho ${aparelho.name}`}
               title={`Excluir aparelho ${aparelho.name}`}
               onClick={(event) => { event.stopPropagation(); onExcluirAparelho(aparelho.id) }}
@@ -684,7 +751,7 @@ function TelaCatalogo({ currentUser, onExcluirAparelho, academiaSelecionada, apa
           Limpar Cache de Vídeos
         </button>
       </div>
-      <button type="button" onClick={onStart} className="fixed bottom-0 left-1/2 z-10 w-full max-w-lg -translate-x-1/2 bg-[#1A3E95] px-5 py-4 text-sm font-bold text-white">Start (Modo Foco){aparelhosSelecionados.length ? ` · ${aparelhosSelecionados.length} selecionado${aparelhosSelecionados.length > 1 ? 's' : ''}` : ''}</button>
+      <button type="button" onClick={onStart} disabled={loading || salvando} className="fixed bottom-0 left-1/2 z-10 w-full max-w-lg -translate-x-1/2 bg-[#1A3E95] px-5 py-4 text-sm font-bold text-white disabled:opacity-50">Start (Modo Foco){aparelhosSelecionados.length ? ` · ${aparelhosSelecionados.length} selecionado${aparelhosSelecionados.length > 1 ? 's' : ''}` : ''}</button>
       {novoAparelhoAberto && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A142F]/60 px-5 backdrop-blur-sm"><form onSubmit={onSalvarNovo} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#111f42]"><h2 className="text-lg font-bold">Novo Aparelho</h2><label className="mt-4 block text-sm font-semibold">Nome do Aparelho<input required value={nomeNovoAparelho} onChange={(event) => onNomeChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><label className="mt-4 inline-flex cursor-pointer rounded-xl border border-[#1A3E95] px-4 py-2.5 text-sm font-bold text-[#1A3E95]">{fotoNovoAparelho ? 'Trocar Foto' : 'Tirar Foto'}<input type="file" accept="image/*" capture="environment" onChange={onFotoNovo} className="sr-only" /></label><label className="mt-4 block text-sm font-semibold">Link do vídeo (opcional)<input type="url" value={videoNovoAparelho} onChange={(event) => onVideoChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><div className="mt-6 flex gap-3"><button type="button" onClick={onFecharNovo} className="flex-1 rounded-xl border p-3 font-bold">Cancelar</button><button type="submit" className="flex-1 rounded-xl bg-[#1A3E95] p-3 font-bold text-white">Salvar Aparelho</button></div></form></div>}
     </section>
   )
@@ -716,19 +783,21 @@ function HeaderApp({ perfil, onTrocar, isDarkMode, onAlternarTema, onVoltar, tel
   </header>
 }
 
-function TelaPerfis({ perfis, onSelecionar, onCadastrar }) {
+function TelaPerfis({ perfis, onSelecionar, onCadastrar, loading, salvando, erroPersistencia }) {
   const [nome, setNome] = useState('')
   const [erro, setErro] = useState('')
-  const salvar = (event) => {
+  const salvar = async (event) => {
     event.preventDefault()
     const nomeLimpo = nome.trim()
     if (!nomeLimpo) { setErro('Informe o nome do perfil.'); return }
-    if (!onCadastrar(nomeLimpo)) setErro('Já existe um perfil com esse nome.')
+    if (!await onCadastrar(nomeLimpo)) setErro('Não foi possível cadastrar. Verifique se o nome já existe ou tente novamente.')
   }
   return <main className="min-h-screen bg-slate-100 px-5 py-8 text-slate-900 dark:bg-[#0A142F] dark:text-white">
     <section className="mx-auto max-w-lg py-8">
       <img src="/logo.png" alt="Calazans" className="mx-auto mb-8 h-16 w-auto object-contain" />
       <h1 className="text-center text-2xl font-bold">Quem vai treinar hoje?</h1>
+      {loading && <p role="status" className="mt-3 text-center text-xs text-slate-500 dark:text-slate-300">Carregando perfis…</p>}
+      {erroPersistencia && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-300">{erroPersistencia}</p>}
       <div className="mt-8 space-y-3">{perfis.map((perfil) => <button key={perfil.id} type="button" onClick={() => onSelecionar(perfil)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-5 py-4 text-left hover:border-[#1A3E95] focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-600 dark:bg-slate-900">
         <span className="break-words font-bold">{perfil.name}</span>{perfil.role === 'admin' && <span className="text-xs text-[#1A3E95] dark:text-blue-300">Administrador</span>}
       </button>)}</div>
@@ -736,13 +805,13 @@ function TelaPerfis({ perfis, onSelecionar, onCadastrar }) {
         <label htmlFor="nome-perfil" className="mb-2 block text-sm font-semibold">Novo perfil</label>
         <input id="nome-perfil" required maxLength={60} value={nome} onChange={(event) => { setNome(event.target.value); setErro('') }} autoComplete="name" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-slate-600 dark:bg-slate-900" />
         {erro && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-300">{erro}</p>}
-        <button type="submit" className="mt-4 w-full rounded-lg bg-[#1A3E95] px-4 py-3 font-bold text-white hover:bg-[#15357E]">Cadastrar Perfil</button>
+        <button type="submit" disabled={loading || salvando} className="mt-4 w-full rounded-lg bg-[#1A3E95] px-4 py-3 font-bold text-white hover:bg-[#15357E] disabled:opacity-50">{salvando ? 'Salvando…' : 'Cadastrar Perfil'}</button>
       </form>
     </section>
   </main>
 }
 
-function TelaHistorico({ geral, perfis, dadosPerfis, filtro, onFiltro }) {
+function TelaHistorico({ geral, perfis, dadosPerfis, filtro, onFiltro, loading }) {
   const perfisVisiveis = geral && filtro !== 'todos' ? perfis.filter((perfil) => perfil.id === filtro) : perfis
   const registros = perfisVisiveis.flatMap((perfil) => (dadosPerfis[perfil.id]?.historico || []).map((treino) => ({ ...treino, perfil }))).sort((primeiro, segundo) => new Date(segundo.data) - new Date(primeiro.data))
   return <section className="flex-1 pt-1 pb-4">
@@ -750,7 +819,7 @@ function TelaHistorico({ geral, perfis, dadosPerfis, filtro, onFiltro }) {
     {geral && <label className="mt-5 block text-sm font-semibold">Perfil<select value={filtro} onChange={(event) => onFiltro(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 dark:border-slate-600 dark:bg-slate-800">
       <option value="todos">Todos os usuários</option>{perfis.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.name}</option>)}
     </select></label>}
-    {registros.length === 0 && <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Nenhum treino encerrado.</p>}
+    {loading ? <p role="status" className="mt-3 text-xs text-slate-500 dark:text-slate-300">Carregando histórico…</p> : registros.length === 0 && <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Nenhum treino encerrado.</p>}
     <div className="mt-6 space-y-4">{registros.map((treino) => <article key={treino.id} className="rounded-lg border border-slate-300 p-4 dark:border-slate-600">
       {geral && <h2 className="font-bold">{treino.perfil.name}</h2>}
       <p className="text-sm"><time dateTime={treino.data}>{new Date(treino.data).toLocaleString('pt-BR')}</time></p>
