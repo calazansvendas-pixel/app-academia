@@ -1,10 +1,46 @@
 import { useEffect, useState } from 'react'
 
+const perfilAdmin = { id: 'calazans', name: 'Calazans', role: 'admin' }
+const dadosVazios = { selecionados: [], series: {}, concluidos: {}, videos: {}, historico: [] }
+
+function lerDados(chave, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(chave)) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function excluirAparelhoDosDados(currentUser, aparelhoId, machines, dadosPerfis, fotos) {
+  if (currentUser?.role !== 'admin') return null
+  const aparelho = machines.find((item) => item.id === aparelhoId)
+  if (!aparelho) return null
+
+  const semChave = (mapa, chave) => Object.fromEntries(Object.entries(mapa).filter(([id]) => id !== chave))
+  return {
+    machines: machines.filter((item) => item.id !== aparelhoId),
+    fotos: semChave(fotos, aparelhoId),
+    dadosPerfis: Object.fromEntries(Object.entries(dadosPerfis).map(([perfilId, dados]) => {
+      const atuais = { ...dadosVazios, ...dados }
+      return [perfilId, {
+        ...atuais,
+        selecionados: atuais.selecionados.filter((nome) => nome !== aparelho.name),
+        series: semChave(atuais.series, aparelho.name),
+        concluidos: semChave(atuais.concluidos, aparelho.name),
+        videos: semChave(atuais.videos, aparelhoId),
+      }]
+    })),
+  }
+}
+
 function App() {
-  const [telaAtual, setTelaAtual] = useState('login')
+  const [telaAtual, setTelaAtual] = useState('perfis')
+  const [perfis, setPerfis] = useState(() => [perfilAdmin, ...lerDados('perfis', []).filter((perfil) => perfil.id !== perfilAdmin.id).map((perfil) => ({ ...perfil, role: 'user' }))])
+  const [perfilAtivo, setPerfilAtivo] = useState(null)
+  const currentUser = perfilAtivo
+  const [filtroHistorico, setFiltroHistorico] = useState('todos')
   const [modoFoco, setModoFoco] = useState(false)
   const [academiaSelecionada, setAcademiaSelecionada] = useState('')
-  const [aparelhosSelecionados, setAparelhosSelecionados] = useState([])
   const [novoAparelhoAberto, setNovoAparelhoAberto] = useState(false)
   const [nomeNovoAparelho, setNomeNovoAparelho] = useState('')
   const [fotoNovoAparelho, setFotoNovoAparelho] = useState('')
@@ -13,8 +49,6 @@ function App() {
   const [aparelhoEmExecucao, setAparelhoEmExecucao] = useState('')
   const [descansoSegundos, setDescansoSegundos] = useState(0)
   const [descansoAtivo, setDescansoAtivo] = useState(false)
-  const [seriesConcluidas, setSeriesConcluidas] = useState({})
-  const [aparelhosConcluidos, setAparelhosConcluidos] = useState({})
   const [avisoSelecao, setAvisoSelecao] = useState('')
   const [fotosAparelhos, setFotosAparelhos] = useState(() => {
     try {
@@ -74,11 +108,67 @@ function App() {
   const [aparelhos, setAparelhos] = useState(() => {
     try {
       const aparelhosSalvos = JSON.parse(localStorage.getItem('aparelhos') || 'null')
-      return Array.isArray(aparelhosSalvos) && aparelhosSalvos.length > 0 ? aparelhosSalvos : aparelhosPadrao
+      return Array.isArray(aparelhosSalvos) ? aparelhosSalvos : aparelhosPadrao
     } catch {
       return aparelhosPadrao
     }
   })
+
+  const [dadosPerfis, setDadosPerfis] = useState(() => lerDados('dados-perfis', {
+    [perfilAdmin.id]: {
+      ...dadosVazios,
+      videos: Object.fromEntries(aparelhos.map((aparelho) => [aparelho.id, aparelho.videoUrl || aparelho.video || ''])),
+    },
+  }))
+  const dadosAtivos = { ...dadosVazios, ...dadosPerfis[perfilAtivo?.id] }
+  const aparelhosSelecionados = dadosAtivos.selecionados
+  const seriesConcluidas = dadosAtivos.series
+  const aparelhosConcluidos = dadosAtivos.concluidos
+  const catalogoDoPerfil = aparelhos.map((aparelho) => ({ ...aparelho, video: '', videoUrl: dadosAtivos.videos[aparelho.id] || '' }))
+
+  useEffect(() => {
+    localStorage.setItem('perfis', JSON.stringify(perfis))
+  }, [perfis])
+
+  useEffect(() => {
+    localStorage.setItem('dados-perfis', JSON.stringify(dadosPerfis))
+  }, [dadosPerfis])
+
+  const atualizarDados = (campo, valor) => {
+    if (!perfilAtivo) return
+    setDadosPerfis((current) => {
+      const dados = { ...dadosVazios, ...current[perfilAtivo.id] }
+      return { ...current, [perfilAtivo.id]: { ...dados, [campo]: typeof valor === 'function' ? valor(dados[campo]) : valor } }
+    })
+  }
+  const setAparelhosSelecionados = (valor) => atualizarDados('selecionados', valor)
+  const setSeriesConcluidas = (valor) => atualizarDados('series', valor)
+  const setAparelhosConcluidos = (valor) => atualizarDados('concluidos', valor)
+
+  const escolherPerfil = (perfil) => {
+    setPerfilAtivo(perfil)
+    setTelaAtual('academias')
+    setAvisoSelecao('')
+    setFiltroHistorico('todos')
+  }
+
+  const trocarPerfil = () => {
+    setModoFoco(false)
+    setDescansoAtivo(false)
+    setDescansoSegundos(0)
+    setVideoAtivo(null)
+    fecharNovoAparelho()
+    setPerfilAtivo(null)
+    setTelaAtual('perfis')
+  }
+
+  const cadastrarPerfil = (nome) => {
+    if (perfis.some((perfil) => perfil.name.toLocaleLowerCase('pt-BR') === nome.toLocaleLowerCase('pt-BR'))) return false
+    const perfil = { id: crypto.randomUUID(), name: nome, role: 'user' }
+    setPerfis((current) => [...current, perfil])
+    escolherPerfil(perfil)
+    return true
+  }
 
   const capturarFoto = (aparelho, event) => {
     const arquivo = event.target.files?.[0]
@@ -124,11 +214,12 @@ function App() {
     const id = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `aparelho-${Date.now()}`
-    const novoAparelho = { id, name: nome, videoUrl: formatarYoutubeUrl(videoNovoAparelho.trim()) }
+    const novoAparelho = { id, name: nome }
     const novaLista = [...aparelhos, novoAparelho]
 
     setAparelhos(novaLista)
     localStorage.setItem('aparelhos', JSON.stringify(novaLista))
+    atualizarDados('videos', (current) => ({ ...current, [id]: formatarYoutubeUrl(videoNovoAparelho.trim()) }))
     if (fotoNovoAparelho) {
       setFotosAparelhos((current) => {
         const novasFotos = { ...current, [id]: fotoNovoAparelho }
@@ -144,18 +235,34 @@ function App() {
     if (novoLink === null) return // Cancelado
 
     const videoUrlFormatado = formatarYoutubeUrl(novoLink.trim())
-    setAparelhos((current) => {
-      const novaLista = current.map((ap) =>
-        ap.id === aparelhoId ? { ...ap, videoUrl: videoUrlFormatado } : ap
-      )
-      localStorage.setItem('aparelhos', JSON.stringify(novaLista))
-      return novaLista
-    })
+    atualizarDados('videos', (current) => ({ ...current, [aparelhoId]: videoUrlFormatado }))
+  }
+
+  const excluirAparelho = (aparelhoId) => {
+    if (currentUser?.role !== 'admin') return
+    const aparelho = aparelhos.find((item) => item.id === aparelhoId)
+    if (!aparelho) return
+    if (!window.confirm('Deseja realmente excluir este aparelho do catálogo global?')) return
+
+    const novosDados = excluirAparelhoDosDados(currentUser, aparelhoId, aparelhos, dadosPerfis, fotosAparelhos)
+    if (!novosDados) return
+    localStorage.setItem('aparelhos', JSON.stringify(novosDados.machines))
+    localStorage.setItem('fotos-aparelhos', JSON.stringify(novosDados.fotos))
+    localStorage.setItem('dados-perfis', JSON.stringify(novosDados.dadosPerfis))
+    setAparelhos(novosDados.machines)
+    setFotosAparelhos(novosDados.fotos)
+    setDadosPerfis(novosDados.dadosPerfis)
+    setVideoAtivo(null)
+    if (aparelhoEmExecucao === aparelho.name) {
+      setAparelhoEmExecucao('')
+      setTelaFoco('atual')
+      setDescansoAtivo(false)
+      setDescansoSegundos(0)
+    }
   }
 
   const limparCache = () => {
-    localStorage.clear()
-    window.location.reload()
+    if (window.confirm('Limpar apenas os vídeos salvos neste perfil?')) atualizarDados('videos', {})
   }
 
   const abrirCatalogo = (academia) => {
@@ -188,8 +295,6 @@ function App() {
     setDescansoSegundos(0)
     setTelaFoco('atual')
     setAparelhoEmExecucao('')
-    setSeriesConcluidas({})
-    setAparelhosConcluidos({})
     setModoFoco(false)
   }
 
@@ -224,6 +329,17 @@ function App() {
   }
 
   const encerrarTreino = () => {
+    const exercicios = aparelhosSelecionados.map((nome) => {
+      const aparelho = aparelhos.find((item) => item.name === nome)
+      return { id: aparelho?.id, nome, series: Number(seriesConcluidas[nome] || 0), status: aparelhosConcluidos[nome] ? 'Concluído' : 'Não concluído' }
+    })
+    atualizarDados('historico', (current) => [...current, {
+      id: crypto.randomUUID(),
+      data: new Date().toISOString(),
+      academia: academiaSelecionada,
+      status: exercicios.every((item) => item.status === 'Concluído') ? 'Concluído' : 'Parcial',
+      exercicios,
+    }])
     setModoFoco(false)
     setTelaAtual('academias')
     setTelaFoco('atual')
@@ -234,29 +350,52 @@ function App() {
     setDescansoSegundos(0)
   }
 
-  const aparelhoEmFoco = aparelhos.find((aparelho) => aparelho.name === aparelhoEmExecucao)
+  const aparelhoEmFoco = catalogoDoPerfil.find((aparelho) => aparelho.name === aparelhoEmExecucao)
   const fotoEmFoco = aparelhoEmFoco ? fotosAparelhos[aparelhoEmFoco.id] : ''
   const formatarTempo = (segundos) => `${String(Math.floor(segundos / 60)).padStart(2, '0')}:${String(segundos % 60).padStart(2, '0')}`
+
+  const voltar = modoFoco
+    ? () => {
+      if (telaFoco === 'atual') sairDoFoco()
+      else { setTelaFoco('atual'); setDescansoAtivo(false) }
+    }
+    : telaAtual !== 'academias' ? () => setTelaAtual('academias') : undefined
+  const abrirHistorico = (tela) => {
+    setDescansoAtivo(false)
+    setModoFoco(false)
+    setVideoAtivo(null)
+    setTelaAtual(tela)
+  }
+  const barraPerfil = perfilAtivo && <HeaderApp
+    perfil={perfilAtivo}
+    onTrocar={trocarPerfil}
+    isDarkMode={isDarkMode}
+    onAlternarTema={() => setIsDarkMode((current) => !current)}
+    onVoltar={voltar}
+    telaAtual={modoFoco ? 'treino' : telaAtual}
+    onHistorico={abrirHistorico}
+  />
+
+  if (!perfilAtivo) {
+    return <TelaPerfis perfis={perfis} onSelecionar={escolherPerfil} onCadastrar={cadastrarPerfil} />
+  }
 
   if (modoFoco) {
     return (
       <>
         {telaFoco === 'atual' ? <TelaTreinoAtual
+          barraPerfil={barraPerfil}
           aparelhosSelecionados={aparelhosSelecionados}
           aparelhosConcluidos={aparelhosConcluidos}
           onSelecionar={abrirExecucao}
           onEncerrar={encerrarTreino}
-          isDarkMode={isDarkMode}
-          onAlternarTema={() => setIsDarkMode((current) => !current)}
         /> : <TelaTreinoFoco
+          barraPerfil={barraPerfil}
           aparelhoEmFoco={aparelhoEmFoco}
           fotoEmFoco={fotoEmFoco}
-          isDarkMode={isDarkMode}
           descansoSegundos={descansoSegundos}
           descansoAtivo={descansoAtivo}
           seriesConcluidas={seriesConcluidas[aparelhoEmExecucao] || ''}
-          onSair={() => setTelaFoco('atual')}
-          onAlternarTema={() => setIsDarkMode((current) => !current)}
           onAjustarDescanso={ajustarDescanso}
           onAlternarDescanso={alternarDescanso}
           onZerarDescanso={() => { setDescansoAtivo(false); setDescansoSegundos(0) }}
@@ -273,29 +412,19 @@ function App() {
   return (
     <>
       <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
-        <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
-          <div className="mb-6 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setIsDarkMode((current) => !current)}
-              aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}
-              className="inline-flex items-center gap-2 rounded-full border border-[#CCD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#1A3E95] shadow-sm transition hover:border-[#1A3E95] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-600 dark:bg-[#111f42] dark:text-white dark:hover:border-white"
-            >
-              {isDarkMode ? (
-                <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.7 6.7 0 0 0 21 12.8Z" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1M16.5 12a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-                </svg>
-              )}
-              {isDarkMode ? 'Modo Claro' : 'Modo Escuro'}
-            </button>
-          </div>
+        <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-4 text-slate-900 dark:text-white">
+          {barraPerfil}
 
           <div className="flex flex-1 flex-col">
-            {telaAtual === 'login' ? (
+            {telaAtual === 'historico' || (telaAtual === 'historico-geral' && perfilAtivo.role === 'admin') ? (
+              <TelaHistorico
+                geral={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin'}
+                perfis={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin' ? perfis : [perfilAtivo]}
+                dadosPerfis={telaAtual === 'historico-geral' && perfilAtivo.role === 'admin' ? dadosPerfis : { [perfilAtivo.id]: dadosAtivos }}
+                filtro={filtroHistorico}
+                onFiltro={setFiltroHistorico}
+              />
+            ) : telaAtual === 'login' ? (
               <>
                 <section className="flex flex-1 flex-col justify-center py-12">
                 <div className="mb-10 flex flex-col items-center text-center">
@@ -364,12 +493,7 @@ function App() {
               <p className="pb-2 text-center text-xs text-slate-400 dark:text-slate-300">Treine com propósito. Evolua com consistência.</p>
             </>
           ) : telaAtual === 'academias' ? (
-            <section className="flex flex-1 flex-col justify-center py-12">
-              <div className="mb-4">
-                <button type="button" onClick={() => setTelaAtual('login')} className="text-sm font-semibold text-[#1A3E95] transition hover:text-[#15357E] focus:outline-none focus:ring-2 focus:ring-[#1A3E95] focus:ring-offset-2 dark:text-blue-300 dark:hover:text-white">
-                  ← Voltar
-                </button>
-              </div>
+            <section className="flex flex-1 flex-col py-2">
 
               <header className="mb-8 text-center">
                 <img src="/logo.png" alt="Calazans" className="mx-auto mb-6 block h-12 w-auto object-contain" />
@@ -396,8 +520,10 @@ function App() {
             </section>
           ) : (
             <TelaCatalogo
+              currentUser={currentUser}
+              onExcluirAparelho={excluirAparelho}
               academiaSelecionada={academiaSelecionada}
-              aparelhos={aparelhos}
+              aparelhos={catalogoDoPerfil}
               aparelhosSelecionados={aparelhosSelecionados}
               fotosAparelhos={fotosAparelhos}
               avisoSelecao={avisoSelecao}
@@ -405,7 +531,6 @@ function App() {
               nomeNovoAparelho={nomeNovoAparelho}
               fotoNovoAparelho={fotoNovoAparelho}
               videoNovoAparelho={videoNovoAparelho}
-              onVoltar={() => setTelaAtual('academias')}
               onAlternarAparelho={alternarAparelho}
               onCapturarFoto={capturarFoto}
               onStart={iniciarFoco}
@@ -428,20 +553,13 @@ function App() {
 )
 }
 
-function TelaTreinoFoco({ aparelhoEmFoco, fotoEmFoco, isDarkMode, descansoSegundos, descansoAtivo, seriesConcluidas, onSair, onAlternarTema, onAjustarDescanso, onAlternarDescanso, onZerarDescanso, onSeriesChange, onConcluir, formatarTempo, onVerVideo }) {
+function TelaTreinoFoco({ barraPerfil, aparelhoEmFoco, fotoEmFoco, descansoSegundos, descansoAtivo, seriesConcluidas, onAjustarDescanso, onAlternarDescanso, onZerarDescanso, onSeriesChange, onConcluir, formatarTempo, onVerVideo }) {
   return (
     <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
-      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
-        <header className="flex items-center justify-between">
-          <button type="button" onClick={onSair} className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-[#1A3E95] transition hover:bg-[#1A3E95]/10 focus:outline-none focus:ring-2 focus:ring-[#1A3E95] dark:text-blue-300 dark:hover:bg-white/10">
-            <span aria-hidden="true">&lt;</span> Sair do Treino
-          </button>
-          <button type="button" onClick={onAlternarTema} className="rounded-full border border-[#CCD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#1A3E95] shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-            {isDarkMode ? 'Modo Claro' : 'Modo Escuro'}
-          </button>
-        </header>
+      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-4 text-slate-900 dark:text-white">
+        {barraPerfil}
 
-        <div className="mt-8 text-center">
+        <div className="mt-1 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Execução atual</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">{aparelhoEmFoco?.name}</h1>
           {(aparelhoEmFoco?.videoUrl || aparelhoEmFoco?.video) && (
@@ -488,17 +606,15 @@ function TelaTreinoFoco({ aparelhoEmFoco, fotoEmFoco, isDarkMode, descansoSegund
   )
 }
 
-function TelaTreinoAtual({ aparelhosSelecionados, aparelhosConcluidos, onSelecionar, onEncerrar, isDarkMode, onAlternarTema }) {
+function TelaTreinoAtual({ barraPerfil, aparelhosSelecionados, aparelhosConcluidos, onSelecionar, onEncerrar }) {
   return (
     <div className="min-h-screen bg-[#f1f5f9] dark:bg-[#0a142f] transition-colors duration-200">
-      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-8 text-slate-900 dark:text-white">
-        <header className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Modo Foco</p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">Treino Atual</h1>
-          </div>
-          <button type="button" onClick={onAlternarTema} className="rounded-full border border-[#CCD5E1] bg-white px-3 py-2 text-xs font-semibold text-[#1A3E95] shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</button>
-        </header>
+      <main className="max-w-lg mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col relative px-5 py-4 text-slate-900 dark:text-white">
+        {barraPerfil}
+        <div className="mt-1">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Modo Foco</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">Treino Atual</h1>
+        </div>
         <p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Escolha livremente qual aparelho está disponível agora.</p>
         <div className="mt-7 space-y-3">
           {aparelhosSelecionados.map((nome) => {
@@ -515,21 +631,31 @@ function TelaTreinoAtual({ aparelhosSelecionados, aparelhosConcluidos, onSelecio
   )
 }
 
-function TelaCatalogo({ academiaSelecionada, aparelhos, aparelhosSelecionados, fotosAparelhos, avisoSelecao, novoAparelhoAberto, nomeNovoAparelho, fotoNovoAparelho, videoNovoAparelho, onVoltar, onAlternarAparelho, onCapturarFoto, onStart, onAbrirNovo, onFecharNovo, onSalvarNovo, onNomeChange, onFotoNovo, onVideoChange, onVerVideo, onEditarVideo, onLimparCache }) {
+function TelaCatalogo({ currentUser, onExcluirAparelho, academiaSelecionada, aparelhos, aparelhosSelecionados, fotosAparelhos, avisoSelecao, novoAparelhoAberto, nomeNovoAparelho, fotoNovoAparelho, videoNovoAparelho, onAlternarAparelho, onCapturarFoto, onStart, onAbrirNovo, onFecharNovo, onSalvarNovo, onNomeChange, onFotoNovo, onVideoChange, onVerVideo, onEditarVideo, onLimparCache }) {
   return (
-    <section className="flex flex-1 flex-col py-10 pb-28">
-      <div className="flex items-center justify-between gap-4 mb-7">
-        <button type="button" onClick={onVoltar} aria-label="Voltar para academias" className="rounded-lg bg-white p-2 text-[#1A3E95] shadow-sm dark:bg-slate-800">&lt;</button>
-        <button type="button" onClick={onAbrirNovo} className="rounded-full bg-[#1A3E95] px-4 py-2.5 text-xs font-bold text-white shadow-md">+ Novo Aparelho</button>
-      </div>
-      <header className="mb-7">
+    <section className="flex flex-1 flex-col pt-1 pb-28">
+      <header className="mb-3">
         <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#1A3E95] dark:text-blue-300">Catálogo de aparelhos</p><h1 className="mt-1 text-2xl font-bold dark:text-white">Treino na {academiaSelecionada}</h1><p className="mt-2 text-sm text-slate-500 dark:text-slate-300">Escolha os exercícios para o seu treino de hoje.</p></div>
       </header>
+      <div className="mb-3 flex justify-end">
+        <button type="button" onClick={onAbrirNovo} className="rounded-full bg-[#1A3E95] px-4 py-2.5 text-xs font-bold text-white shadow-md">+ Novo Aparelho</button>
+      </div>
       <div className="space-y-3">
         {aparelhos.map((aparelho) => {
           const selecionado = aparelhosSelecionados.includes(aparelho.name)
           const videoUrl = aparelho.videoUrl || aparelho.video
-          return <article key={aparelho.id} className={`flex items-center gap-3 rounded-xl border bg-white p-3 shadow-sm dark:bg-[#111f42] ${selecionado ? 'border-[#1A3E95] ring-2 ring-[#1A3E95]/20' : 'border-[#CCD5E1] dark:border-slate-600'}`}>
+          return <article key={aparelho.id} className={`relative flex items-center gap-3 rounded-xl border bg-white p-3 shadow-sm dark:bg-[#111f42] ${selecionado ? 'border-[#1A3E95] ring-2 ring-[#1A3E95]/20' : 'border-[#CCD5E1] dark:border-slate-600'}`}>
+            {currentUser?.role === 'admin' && <button
+              type="button"
+              aria-label={`Excluir aparelho ${aparelho.name}`}
+              title={`Excluir aparelho ${aparelho.name}`}
+              onClick={(event) => { event.stopPropagation(); onExcluirAparelho(aparelho.id) }}
+              className="absolute right-1.5 top-1.5 text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+              </svg>
+            </button>}
             <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">{fotosAparelhos[aparelho.id] ? <img src={fotosAparelhos[aparelho.id]} alt={`Foto do aparelho ${aparelho.name}`} className="h-full w-full object-cover brightness-110 contrast-110" /> : <span className="text-2xl text-slate-300">+</span>}</div>
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-bold">{aparelho.name}</h2>
@@ -562,6 +688,76 @@ function TelaCatalogo({ academiaSelecionada, aparelhos, aparelhosSelecionados, f
       {novoAparelhoAberto && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A142F]/60 px-5 backdrop-blur-sm"><form onSubmit={onSalvarNovo} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#111f42]"><h2 className="text-lg font-bold">Novo Aparelho</h2><label className="mt-4 block text-sm font-semibold">Nome do Aparelho<input required value={nomeNovoAparelho} onChange={(event) => onNomeChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><label className="mt-4 inline-flex cursor-pointer rounded-xl border border-[#1A3E95] px-4 py-2.5 text-sm font-bold text-[#1A3E95]">{fotoNovoAparelho ? 'Trocar Foto' : 'Tirar Foto'}<input type="file" accept="image/*" capture="environment" onChange={onFotoNovo} className="sr-only" /></label><label className="mt-4 block text-sm font-semibold">Link do vídeo (opcional)<input type="url" value={videoNovoAparelho} onChange={(event) => onVideoChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 dark:bg-[#0A142F]" /></label><div className="mt-6 flex gap-3"><button type="button" onClick={onFecharNovo} className="flex-1 rounded-xl border p-3 font-bold">Cancelar</button><button type="submit" className="flex-1 rounded-xl bg-[#1A3E95] p-3 font-bold text-white">Salvar Aparelho</button></div></form></div>}
     </section>
   )
+}
+
+function HeaderApp({ perfil, onTrocar, isDarkMode, onAlternarTema, onVoltar, telaAtual, onHistorico }) {
+  const abas = [{ tela: 'historico', nome: 'Meu Histórico' }, ...(perfil.role === 'admin' ? [{ tela: 'historico-geral', nome: 'Histórico Geral' }] : [])]
+  return <header className="mb-3 w-full max-w-lg border-b border-slate-200 pb-2 dark:border-slate-700" aria-label="Cabeçalho do aplicativo">
+    <div className="flex h-9 items-center justify-between gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span title={perfil.name} className="truncate text-sm font-bold">{perfil.name}</span>
+        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-200">{perfil.role === 'admin' ? 'Admin' : 'Usuário'}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button type="button" onClick={onTrocar} title="Trocar usuário" className="rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 focus:ring-2 focus:ring-[#1A3E95] dark:text-slate-300 dark:hover:bg-slate-800">Trocar</button>
+        <button type="button" onClick={onAlternarTema} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} className="flex size-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[#1A3E95] transition hover:bg-blue-50 focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-700 dark:bg-slate-800 dark:text-blue-200">
+          <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            {isDarkMode ? <><circle cx="12" cy="12" r="4" /><path strokeLinecap="round" d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5" /></> : <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.7 6.7 0 0 0 21 12.8Z" />}
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div className="mt-1 flex h-8 items-center justify-between gap-1">
+      {onVoltar && <button type="button" onClick={onVoltar} className="shrink-0 whitespace-nowrap rounded-lg px-1 py-1.5 text-xs font-semibold text-[#1A3E95] hover:bg-blue-50 focus:ring-2 focus:ring-[#1A3E95] dark:text-blue-300 dark:hover:bg-slate-800">← Voltar</button>}
+      <nav aria-label="Históricos" className="ml-auto inline-flex min-w-0 items-center rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+        {abas.map((aba) => <button key={aba.tela} type="button" aria-pressed={telaAtual === aba.tela} onClick={() => onHistorico(aba.tela)} className={`whitespace-nowrap rounded-md px-2 py-1.5 text-[10px] font-semibold transition focus:ring-2 focus:ring-[#1A3E95] sm:text-xs ${telaAtual === aba.tela ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200' : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'}`}>{aba.nome}</button>)}
+      </nav>
+    </div>
+  </header>
+}
+
+function TelaPerfis({ perfis, onSelecionar, onCadastrar }) {
+  const [nome, setNome] = useState('')
+  const [erro, setErro] = useState('')
+  const salvar = (event) => {
+    event.preventDefault()
+    const nomeLimpo = nome.trim()
+    if (!nomeLimpo) { setErro('Informe o nome do perfil.'); return }
+    if (!onCadastrar(nomeLimpo)) setErro('Já existe um perfil com esse nome.')
+  }
+  return <main className="min-h-screen bg-slate-100 px-5 py-8 text-slate-900 dark:bg-[#0A142F] dark:text-white">
+    <section className="mx-auto max-w-lg py-8">
+      <img src="/logo.png" alt="Calazans" className="mx-auto mb-8 h-16 w-auto object-contain" />
+      <h1 className="text-center text-2xl font-bold">Quem vai treinar hoje?</h1>
+      <div className="mt-8 space-y-3">{perfis.map((perfil) => <button key={perfil.id} type="button" onClick={() => onSelecionar(perfil)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-5 py-4 text-left hover:border-[#1A3E95] focus:ring-2 focus:ring-[#1A3E95] dark:border-slate-600 dark:bg-slate-900">
+        <span className="break-words font-bold">{perfil.name}</span>{perfil.role === 'admin' && <span className="text-xs text-[#1A3E95] dark:text-blue-300">Administrador</span>}
+      </button>)}</div>
+      <form onSubmit={salvar} className="mt-8 border-t border-slate-300 pt-6 dark:border-slate-700">
+        <label htmlFor="nome-perfil" className="mb-2 block text-sm font-semibold">Novo perfil</label>
+        <input id="nome-perfil" required maxLength={60} value={nome} onChange={(event) => { setNome(event.target.value); setErro('') }} autoComplete="name" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-slate-600 dark:bg-slate-900" />
+        {erro && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-300">{erro}</p>}
+        <button type="submit" className="mt-4 w-full rounded-lg bg-[#1A3E95] px-4 py-3 font-bold text-white hover:bg-[#15357E]">Cadastrar Perfil</button>
+      </form>
+    </section>
+  </main>
+}
+
+function TelaHistorico({ geral, perfis, dadosPerfis, filtro, onFiltro }) {
+  const perfisVisiveis = geral && filtro !== 'todos' ? perfis.filter((perfil) => perfil.id === filtro) : perfis
+  const registros = perfisVisiveis.flatMap((perfil) => (dadosPerfis[perfil.id]?.historico || []).map((treino) => ({ ...treino, perfil }))).sort((primeiro, segundo) => new Date(segundo.data) - new Date(primeiro.data))
+  return <section className="flex-1 pt-1 pb-4">
+    <h1 className="text-2xl font-bold">{geral ? 'Histórico Geral' : 'Meu Histórico'}</h1>
+    {geral && <label className="mt-5 block text-sm font-semibold">Perfil<select value={filtro} onChange={(event) => onFiltro(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 dark:border-slate-600 dark:bg-slate-800">
+      <option value="todos">Todos os usuários</option>{perfis.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.name}</option>)}
+    </select></label>}
+    {registros.length === 0 && <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Nenhum treino encerrado.</p>}
+    <div className="mt-6 space-y-4">{registros.map((treino) => <article key={treino.id} className="rounded-lg border border-slate-300 p-4 dark:border-slate-600">
+      {geral && <h2 className="font-bold">{treino.perfil.name}</h2>}
+      <p className="text-sm"><time dateTime={treino.data}>{new Date(treino.data).toLocaleString('pt-BR')}</time></p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{treino.academia} · {treino.status}</p>
+      <ul className="mt-3 space-y-2 text-sm">{treino.exercicios.map((exercicio, indice) => <li key={`${exercicio.id}-${indice}`} className="flex flex-wrap justify-between gap-1"><span>{exercicio.nome} · {exercicio.series} séries</span><span className={exercicio.status === 'Concluído' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-300'}>{exercicio.status}</span></li>)}</ul>
+    </article>)}</div>
+  </section>
 }
 
 export default App
